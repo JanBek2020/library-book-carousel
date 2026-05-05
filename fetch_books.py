@@ -39,8 +39,11 @@ def fetch_analytics_report(report_path):
             response = requests.get(url, headers=headers, params=params, timeout=30)
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching Analytics report: {e}")
-            break
+    print(f"Error fetching Analytics report: {e}")
+    if hasattr(e, 'response') and e.response is not None:
+        print(f"Status code: {e.response.status_code}")
+        print(f"Full error response: {e.response.text}")
+    break
 
         root = ET.fromstring(response.content)
         ns = {
