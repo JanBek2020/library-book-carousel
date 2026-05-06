@@ -13,6 +13,12 @@ OPEN_LIBRARY_COVER = 'https://covers.openlibrary.org/b/isbn'
 EBOOK_REPORT_PATH = '/shared/Hobart/Reports/Alma Analytics API/New Ebooks'
 PRINT_REPORT_PATH = '/shared/Hobart/Reports/Alma Analytics API/New Print Books'
 
+NS = {
+    'ns': 'urn:schemas-microsoft-com:xml-analysis:rowset',
+    'xsd': 'http://www.w3.org/2001/XMLSchema',
+    'saw-sql': 'urn:saw-sql'
+}
+
 def fetch_analytics_report(report_path):
     """Fetch results from an Alma Analytics report"""
     headers = {
@@ -30,6 +36,7 @@ def fetch_analytics_report(report_path):
     all_rows = []
     is_finished = False
     token = None
+    first_batch = True
 
     while not is_finished:
         if token:
@@ -46,14 +53,17 @@ def fetch_analytics_report(report_path):
             break
 
         root = ET.fromstring(response.content)
-        ns = {
-            'ns': 'urn:schemas-microsoft-com:xml-analysis:rowset',
-            'xsd': 'http://www.w3.org/2001/XMLSchema',
-            'saw-sql': 'urn:saw-sql'
-        }
 
         # Get rows
-        rows = root.findall('.//ns:Row', ns)
+        rows = root.findall('.//ns:Row', NS)
+
+        # DEBUG: Print column tags from first row of first batch
+        if first_batch and rows:
+            print("DEBUG - Column tags in first row:")
+            for child in rows[0]:
+                print(f"  Tag: {child.tag!r}, Text: {child.text!r}")
+            first_batch = False
+
         all_rows.extend(rows)
 
         # Check if finished
@@ -71,21 +81,62 @@ def fetch_analytics_report(report_path):
     print(f"Fetched {len(all_rows)} rows from {report_path}")
     return all_rows
 
+
+def get_cell_text(row, *tag_names):
+    """Try multiple tag name variations to find a cell value"""
+    for tag in tag_names:
+        # Try with namespace
+        el = row.find(f'ns:{tag}', NS)
+        if el is not None and el.text:
+            return el.text.strip()
+        # Try without namespace
+        el = row.find(tag)
+        if el is not None and el.text:
+            return el.text.strip()
+    return None
+
+
+def extract_best_isbn(isbn_field):
+    """Extract best ISBN from semicolon-separated list, preferring ISBN-13"""
+    if not isbn_field:
+        return None
+
+    # Split on semicolon (with or without trailing space)
+    isbns = [i.strip() for i in isbn_field.split(';') if i.strip()]
+
+    # Prefer ISBN-13 (starts with 978 or 979, 13 digits)
+    for isbn in isbns:
+        cleaned = isbn.replace('-', '').replace(' ', '')
+        if len(cleaned) == 13 and cleaned[:3] in ['978', '979'] and cleaned.isdigit():
+            return cleaned
+
+    # Fall back to first valid ISBN-10 (may end in X)
+    for isbn in isbns:
+        cleaned = isbn.replace('-', '').replace(' ', '')
+        if len(cleaned) == 10:
+            return cleaned
+
+    return isbns[0] if isbns else None
+
+
 def parse_print_books(rows):
     """Parse print book rows from Analytics report"""
     books = []
     for row in rows:
         try:
-            title = getattr(row.find('Column1'), 'text', None) or 'Unknown Title'
-            author = getattr(row.find('Column2'), 'text', None) or 'Unknown Author'
-            isbn = getattr(row.find('Column3'), 'text', None)
-            call_number = getattr(row.find('Column4'), 'text', None) or ''
+            title = get_cell_text(row, 'Column1', 'Title') or ''
+            author = get_cell_text(row, 'Column2', 'Author') or ''
+            isbn_raw = get_cell_text(row, 'Column3', 'ISBN') or ''
+            call_number = get_cell_text(row, 'Column4', 'PermanentCallNumber', 'Permanent Call Number') or ''
+
+            if not title:
+                continue
 
             books.append({
-                'title': title.strip(),
-                'author': author.strip(),
-                'isbn': isbn.strip() if isbn else None,
-                'call_number': call_number.strip(),
+                'title': title,
+                'author': author,
+                'isbn': extract_best_isbn(isbn_raw),
+                'call_number': call_number,
                 'type': 'print'
             })
         except Exception as e:
@@ -93,27 +144,32 @@ def parse_print_books(rows):
             continue
     return books
 
+
 def parse_ebooks(rows):
     """Parse ebook rows from Analytics report"""
     books = []
     for row in rows:
         try:
-            title = getattr(row.find('Column1'), 'text', None) or 'Unknown Title'
-            author = getattr(row.find('Column2'), 'text', None) or 'Unknown Author'
-            isbn = getattr(row.find('Column3'), 'text', None)
-            platform = getattr(row.find('Column4'), 'text', None) or ''
+            title = get_cell_text(row, 'Column1', 'Title') or ''
+            author = get_cell_text(row, 'Column2', 'Author') or ''
+            isbn_raw = get_cell_text(row, 'Column3', 'ISBN') or ''
+            platform = get_cell_text(row, 'Column4', 'ElectronicCollectionInterfaceName', 'Electronic Collection Interface Name') or ''
+
+            if not title:
+                continue
 
             books.append({
-                'title': title.strip(),
-                'author': author.strip(),
-                'isbn': isbn.strip() if isbn else None,
-                'platform': platform.strip(),
+                'title': title,
+                'author': author,
+                'isbn': extract_best_isbn(isbn_raw),
+                'platform': platform,
                 'type': 'ebook'
             })
         except Exception as e:
             print(f"Error parsing ebook row: {e}")
             continue
     return books
+
 
 def get_cover_from_google(isbn):
     """Fetch cover image URL from Google Books API"""
@@ -131,6 +187,7 @@ def get_cover_from_google(isbn):
         pass
     return None
 
+
 def get_cover_from_open_library(isbn):
     """Fetch cover image URL from Open Library"""
     if not isbn:
@@ -144,6 +201,7 @@ def get_cover_from_open_library(isbn):
         pass
     return None
 
+
 def get_cover(isbn):
     """Try Google Books first, then Open Library, then placeholder"""
     cover = get_cover_from_google(isbn)
@@ -153,6 +211,7 @@ def get_cover(isbn):
     if cover:
         return cover
     return 'https://via.placeholder.com/128x192.png?text=No+Cover'
+
 
 def main():
     print("Fetching print books from Alma Analytics...")
@@ -184,6 +243,7 @@ def main():
         json.dump(selected, f, indent=2, ensure_ascii=False)
 
     print(f"\n✅ Successfully saved {len(selected)} books to books.json")
+
 
 if __name__ == '__main__':
     main()
