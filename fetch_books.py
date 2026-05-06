@@ -124,9 +124,9 @@ def parse_print_books(rows):
     books = []
     for row in rows:
         try:
-            title = get_cell_text(row, 'Column1', 'Title') or ''
-            author = get_cell_text(row, 'Column2', 'Author') or ''
-            isbn_raw = get_cell_text(row, 'Column3', 'ISBN') or ''
+            title = get_cell_text(row, 'Column3', 'Title') or ''
+            author = get_cell_text(row, 'Column1', 'Author') or ''
+            isbn_raw = get_cell_text(row, 'Column2', 'ISBN') or ''
             call_number = get_cell_text(row, 'Column4', 'PermanentCallNumber', 'Permanent Call Number') or ''
 
             if not title:
@@ -150,9 +150,9 @@ def parse_ebooks(rows):
     books = []
     for row in rows:
         try:
-            title = get_cell_text(row, 'Column1', 'Title') or ''
-            author = get_cell_text(row, 'Column2', 'Author') or ''
-            isbn_raw = get_cell_text(row, 'Column3', 'ISBN') or ''
+            title = get_cell_text(row, 'Column3', 'Title') or ''
+            author = get_cell_text(row, 'Column1', 'Author') or ''
+            isbn_raw = get_cell_text(row, 'Column2', 'ISBN') or ''
             platform = get_cell_text(row, 'Column4', 'ElectronicCollectionInterfaceName', 'Electronic Collection Interface Name') or ''
 
             if not title:
