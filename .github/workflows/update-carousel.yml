@@ -25,7 +25,7 @@ jobs:
     
     - name: Run book fetching script
       env:
-        ALMA_API_KEY: ${{ secrets.ALMA_API_KEY }}
+        ALMA_ANALYTICS_KEY: ${{ secrets.ALMA_ANALYTICS_KEY }}
       run: |
         python fetch_books.py
     
